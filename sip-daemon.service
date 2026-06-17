@@ -1,0 +1,31 @@
+[Unit]
+Description=SIP-Daemon – eingehende Anrufe → PHP-Handler
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=sip-daemon
+Group=sip-daemon
+ExecStart=/usr/bin/python3 /usr/local/sbin/sip_daemon.py --config /etc/sip-daemon/config.ini
+Restart=on-failure
+RestartSec=10
+
+# Logging via systemd journal (zusätzlich zur Log-Datei)
+StandardOutput=journal
+StandardError=journal
+SyslogIdentifier=sip-daemon
+
+# Sicherheits-Härtung
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log
+
+# Port 5060 < 1024 → AmbientCapabilities nötig
+AmbientCapabilities=CAP_NET_BIND_SERVICE
+CapabilityBoundingSet=CAP_NET_BIND_SERVICE
+
+[Install]
+WantedBy=multi-user.target
