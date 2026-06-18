@@ -342,13 +342,19 @@ class SIPDaemon:
         send_fn(build_response('100 Trying', text))
 
         number = extract_caller(text)
-        if number:
-            logging.info(f'Eingehender Anruf von {number}  (Call-ID: {call_id})')
-            threading.Thread(target=self._run_php, args=(number, text),
-                             daemon=True).start()
-        else:
+        if not number:
             logging.warning(f'INVITE ohne erkennbare Rufnummer (Call-ID: {call_id})')
             logging.debug(f'SIP-Rohtext (erste 400 Zeichen):\n{text[:400]}')
+            return
+
+        digits = re.sub(r'[^\d]', '', number)  # nur Ziffern (kein +)
+        if len(digits) != 10:
+            logging.info(f'Anruf von {number} ignoriert (keine 10-stellige Rufnummer)')
+            return
+
+        logging.info(f'Eingehender Anruf von {number}  (Call-ID: {call_id})')
+        threading.Thread(target=self._run_php, args=(number, text),
+                         daemon=True).start()
 
     # ------------------------------------------------------------------
     # UDP-Listener
