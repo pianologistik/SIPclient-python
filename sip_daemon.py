@@ -348,8 +348,8 @@ class SIPDaemon:
             return
 
         digits = re.sub(r'[^\d]', '', number)  # nur Ziffern (kein +)
-        if len(digits) != 10:
-            logging.info(f'Anruf von {number} ignoriert (keine 10-stellige Rufnummer)')
+        if len(digits) != 10 or not digits.startswith('0'):
+            logging.info(f'Anruf von {number} ignoriert (keine 10-stellige Rufnummer beginnend mit 0)')
             return
 
         logging.info(f'Eingehender Anruf von {number}  (Call-ID: {call_id})')
