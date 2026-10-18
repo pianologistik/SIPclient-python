@@ -1,6 +1,6 @@
-# SIP-Daemon
+# SIP-Daemon (Python)
 
-Leichtgewichtiger SIP-Daemon für Ubuntu 22.04, der bei eingehenden Anrufen ein PHP-Script mit der Rufnummer des Anrufers aufruft. Der Anruf wird weder angenommen noch abgelehnt.
+SIP-Daemon für Ubuntu 22.04 — kein PHP erforderlich. Bei eingehenden Anrufen wird ein Python-Handler aufgerufen, der die Rufnummer an die FileMaker Data API weitergibt.
 
 ---
 
@@ -10,118 +10,56 @@ Leichtgewichtiger SIP-Daemon für Ubuntu 22.04, der bei eingehenden Anrufen ein 
 
 - Ubuntu 22.04
 - Root-Zugriff
-- Port 5060 UDP/TCP von aussen erreichbar (Firewall / Router-Portweiterleitung)
-
-### Schritte
+- Port 5060 UDP/TCP von aussen erreichbar
 
 ```bash
-# 1. Repository klonen
-git clone https://github.com/DEIN-USERNAME/SIPclient.git
-cd SIPclient
-
-# 2. Installationsskript ausführen (installiert Python3, PHP-CLI, legt
-#    Systembenutzer an, kopiert Dateien, richtet systemd-Service ein)
+git clone https://github.com/pianologistik/SIPclient-python.git
+cd SIPclient-python
 sudo bash install.sh
 ```
-
-Das Skript legt folgende Dateien an:
-
-| Pfad | Beschreibung |
-|---|---|
-| `/usr/local/sbin/sip_daemon.py` | Daemon-Hauptprogramm |
-| `/etc/sip-daemon/config.ini` | Konfigurationsdatei |
-| `/usr/local/share/sip-daemon/handler.php` | PHP-Handler (Beispiel) |
-| `/etc/systemd/system/sip-daemon.service` | Systemd-Unit |
 
 ---
 
 ## Konfiguration
 
-Alle Einstellungen befinden sich in `/etc/sip-daemon/config.ini`.
-
-### SIP-Zugangsdaten
+### `/etc/sip-daemon/config.ini`
 
 ```ini
 [registration]
 enabled  = true
 server   = business2.voipgateway.org
-port     = 5060
 username = 41345116490
 password = DEIN_PASSWORT
 domain   = business2.voipgateway.org
-expires  = 300
-```
 
-### PHP-Handler
-
-```ini
 [handler]
-php_binary = php
-php_script = /usr/local/share/sip-daemon/handler.php
+handler_binary = python3
+handler_script = /usr/local/share/sip-daemon/handler.py
 ```
 
-Der Handler unter `/usr/local/share/sip-daemon/handler.php` wird bei jedem eingehenden Anruf ausgeführt:
+### `/usr/local/share/sip-daemon/handler.py`
 
-```php
-$rufnummer = $argv[1];             // z.B. +41791234567
-$rufnummer = $_ENV['CALLER_NUMBER']; // alternativ als Umgebungsvariable
+FileMaker-Zugangsdaten eintragen:
+
+```python
+FM_HOST   = 'mein-filemaker-server'
+FM_DB     = 'MeineDB'
+FM_LAYOUT = 'Anrufe'
+FM_USER   = 'admin'
+FM_PASS   = 'geheim'
+FM_SKIP_SSL = False  # True bei selbstsigniertem Zertifikat
 ```
 
-### Öffentliche IP (NAT)
-
-Der Daemon erkennt die öffentliche IP automatisch via STUN. Falls das fehlschlägt (kein STUN-Zugriff), manuell eintragen:
-
-```ini
-[sip]
-public_address = 1.2.3.4
-```
-
-### Logging
-
-```ini
-[daemon]
-log_file  = /var/log/sip-daemon.log
-log_level = INFO   # DEBUG für detaillierte SIP-Nachrichten
-```
+Der Handler erstellt bei jedem Anruf einen neuen Datensatz im angegebenen Layout. Feld `Rufnummer` wird mit der Anrufernummer (10 Stellen, beginnt mit 0) befüllt.
 
 ---
 
 ## Betrieb
 
 ```bash
-# Starten
 sudo systemctl start sip-daemon
-
-# Beim Systemstart aktivieren (bereits durch install.sh erledigt)
-sudo systemctl enable sip-daemon
-
-# Status prüfen
-sudo systemctl status sip-daemon
-
-# Live-Logs
-journalctl -u sip-daemon -f
-
-# Anruf-Log
-tail -f /var/log/sip-calls.log
-
-# Beenden
 sudo systemctl stop sip-daemon
-```
-
-### Erwartete Log-Ausgabe bei erfolgreicher Registration
-
-```
-INFO  Öffentliche IP für SIP-Contact: 185.x.x.x
-INFO  UDP SIP-Listener: 0.0.0.0:5060
-INFO  TCP SIP-Listener: 0.0.0.0:5060
-INFO  SIP-Registration OK (41345116490@business2.voipgateway.org → 185.x.x.x:5060)
-```
-
-### Eingehender Anruf
-
-```
-INFO  Eingehender Anruf von +41791234567  (Call-ID: abc123@provider)
-INFO  PHP-Handler gestartet (pid=12345) für Rufnummer +41791234567
+journalctl -u sip-daemon -f
 ```
 
 ---
@@ -130,8 +68,6 @@ INFO  PHP-Handler gestartet (pid=12345) für Rufnummer +41791234567
 
 | Problem | Lösung |
 |---|---|
-| `SIP-Registration fehlgeschlagen: 401` | Zugangsdaten in `config.ini` prüfen |
-| `SIP-Registration fehlgeschlagen: 403` | Benutzername/Domain beim Provider prüfen |
-| Anruf kommt an, PHP startet nicht | Pfad zu `php_script` und `php_binary` prüfen |
-| "nicht erreichbar" beim Anrufen | Port 5060 UDP in Firewall öffnen; `public_address` manuell setzen |
-| Keine Antwort auf REGISTER | `log_level = DEBUG` → rohe SIP-Nachrichten prüfen |
+| Registration schlägt fehl | `log_level = DEBUG` in config.ini |
+| FileMaker-Fehler | SSL-Zertifikat prüfen; `FM_SKIP_SSL = True` bei selbstsigniertem Cert |
+| "nicht erreichbar" | Port 5060 öffnen; `public_address` in config.ini manuell setzen |

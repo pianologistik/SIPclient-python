@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-SIP Daemon — lauscht auf eingehende SIP-Calls und startet ein PHP-Script
+SIP Daemon — lauscht auf eingehende SIP-Calls und startet ein Handler-Script
 mit der Rufnummer des Anrufers. Weder Annahme noch Ablehnung des Anrufs.
 
 Sendet nur 100 Trying, um Retransmissions des Gegenstellers zu stoppen.
@@ -239,8 +239,8 @@ class SIPDaemon:
         # Queue: UDP-Listener leitet SIP-Antworten (2xx/4xx) an Registration weiter
         self._reg_queue: queue.Queue = queue.Queue(maxsize=10)
 
-        # PHP-Handler
-        self.php_bin    = self.cfg.get('handler', 'php_binary', fallback='php')
+        # Handler
+        self.handler_bin = self.cfg.get("handler", "handler_binary", fallback="python3")
         self.php_script = self.cfg.get('handler', 'php_script',
                                        fallback='/usr/local/share/sip-daemon/handler.php')
 
@@ -290,25 +290,25 @@ class SIPDaemon:
             return False
 
     # ------------------------------------------------------------------
-    # PHP aufrufen
+    # Handler aufrufen
     # ------------------------------------------------------------------
 
-    def _run_php(self, number: str, sip_text: str):
+    def _run_handler(self, number: str, sip_text: str):
         env = os.environ.copy()
         env['CALLER_NUMBER'] = number
         env['SIP_INVITE']    = sip_text[:4096]
         try:
             proc = subprocess.Popen(
-                [self.php_bin, self.php_script, number],
+                [self.handler_bin, self.handler_script, number],
                 env=env,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
             )
-            logging.info(f'PHP-Handler gestartet (pid={proc.pid}) für Rufnummer {number}')
+            logging.info(f'Handler gestartet (pid={proc.pid}) für Rufnummer {number}')
         except FileNotFoundError:
-            logging.error(f'PHP-Binary nicht gefunden: {self.php_bin}')
+            logging.error(f'Handler-Binary nicht gefunden: {self.php_bin}')
         except Exception as e:
-            logging.error(f'PHP-Handler Fehler: {e}')
+            logging.error(f'Handler Fehler: {e}')
 
     # ------------------------------------------------------------------
     # Eingehende Nachricht verarbeiten
@@ -353,7 +353,7 @@ class SIPDaemon:
             return
 
         logging.info(f'Eingehender Anruf von {number}  (Call-ID: {call_id})')
-        threading.Thread(target=self._run_php, args=(number, text),
+        threading.Thread(target=self._run_handler, args=(number, text),
                          daemon=True).start()
 
     # ------------------------------------------------------------------
@@ -594,7 +594,7 @@ class SIPDaemon:
 # ---------------------------------------------------------------------------
 
 if __name__ == '__main__':
-    ap = argparse.ArgumentParser(description='SIP-Daemon – eingehende Anrufe → PHP')
+    ap = argparse.ArgumentParser(description='SIP-Daemon – eingehende Anrufe → Handler')
     ap.add_argument('--config', default='/etc/sip-daemon/config.ini',
                     help='Pfad zur Konfigurationsdatei')
     args = ap.parse_args()
