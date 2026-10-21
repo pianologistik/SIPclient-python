@@ -240,9 +240,9 @@ class SIPDaemon:
         self._reg_queue: queue.Queue = queue.Queue(maxsize=10)
 
         # Handler
-        self.handler_bin = self.cfg.get("handler", "handler_binary", fallback="python3")
-        self.php_script = self.cfg.get('handler', 'php_script',
-                                       fallback='/usr/local/share/sip-daemon/handler.php')
+        self.handler_bin    = self.cfg.get('handler', 'handler_binary', fallback='python3')
+        self.handler_script = self.cfg.get('handler', 'handler_script',
+                                           fallback='/usr/local/share/sip-daemon/handler.py')
 
         # Deduplication: Call-ID → Zeitstempel
         self._seen: dict[str, float] = {}
@@ -306,7 +306,7 @@ class SIPDaemon:
             )
             logging.info(f'Handler gestartet (pid={proc.pid}) für Rufnummer {number}')
         except FileNotFoundError:
-            logging.error(f'Handler-Binary nicht gefunden: {self.php_bin}')
+            logging.error(f'Handler-Binary nicht gefunden: {self.handler_bin}')
         except Exception as e:
             logging.error(f'Handler Fehler: {e}')
 
