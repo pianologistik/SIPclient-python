@@ -11,11 +11,19 @@ bind_port    = 5060
 enabled  = true
 server   = business2.voipgateway.org
 port     = 5060
-username = 41345116490
-password = S+a5m)*0Cd)DG17
+username = DEINE_RUFNUMMER
+password = DEIN_PASSWORT
 domain   = business2.voipgateway.org
 expires  = 300
 
 [handler]
 handler_binary = python3
 handler_script = /usr/local/share/sip-daemon/handler.py
+
+[filemaker]
+host     = dein-filemaker-server
+database = DeineDatenbank
+layout   = DeinLayout
+username = api-benutzer
+password = api-passwort
+skip_ssl = false
