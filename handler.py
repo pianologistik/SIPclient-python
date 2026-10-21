@@ -23,8 +23,6 @@ FM_PASS   = 'geheim'
 FM_SKIP_SSL = False
 # ─────────────────────────────────────────────────────────────────────────────
 
-BASE = f'https://{FM_HOST}/fmi/data/v2/databases/{fm_db}'
-
 def fm_request(url, data=None, headers=None, method=None):
     ctx = ssl.create_default_context()
     if FM_SKIP_SSL:
