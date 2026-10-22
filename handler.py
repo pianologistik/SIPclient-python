@@ -12,8 +12,6 @@ import urllib.request
 import urllib.error
 import urllib.parse
 import ssl
-import os
-from datetime import datetime
 
 NUMBER = sys.argv[1] if len(sys.argv) > 1 else ''
 
@@ -27,21 +25,6 @@ FM_USER     = cfg.get('filemaker', 'username')
 FM_PASS     = cfg.get('filemaker', 'password')
 FM_SCRIPT   = cfg.get('filemaker', 'script', fallback='scrAnruflisteEinfuegenClient')
 FM_SKIP_SSL = cfg.getboolean('filemaker', 'skip_ssl', fallback=False)
-CALL_LOG    = cfg.get('daemon', 'call_log', fallback='/var/log/sip-calls.json')
-
-
-def log_call(number):
-    """Letzte 10 Anrufe in JSON-Datei speichern."""
-    calls = []
-    try:
-        with open(CALL_LOG) as f:
-            calls = json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError):
-        pass
-    calls.append({'number': number, 'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')})
-    calls = calls[-10:]  # nur letzte 10 behalten
-    with open(CALL_LOG, 'w') as f:
-        json.dump(calls, f, indent=2)
 
 
 def fm_request(url, data=None, headers=None, method=None):
@@ -81,7 +64,6 @@ def logout(token):
         headers={'Content-Type': 'application/json'}
     )
 
-log_call(NUMBER)
 token = get_token()
 try:
     run_script(token, NUMBER)

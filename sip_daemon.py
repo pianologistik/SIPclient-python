@@ -243,10 +243,13 @@ class SIPDaemon:
         self.handler_bin    = self.cfg.get('handler', 'handler_binary', fallback='python3')
         self.handler_script = self.cfg.get('handler', 'handler_script',
                                            fallback='/usr/local/share/sip-daemon/handler.py')
+        self.call_log       = self.cfg.get('daemon', 'call_log',
+                                           fallback='/var/log/sip-calls.json')
 
         # Deduplication: Call-ID → Zeitstempel
         self._seen: dict[str, float] = {}
         self._seen_lock = threading.Lock()
+        self._call_log_lock = threading.Lock()
 
     # ------------------------------------------------------------------
     # Logging
@@ -290,6 +293,29 @@ class SIPDaemon:
             return False
 
     # ------------------------------------------------------------------
+    # Call-Log (letzte 10 Anrufe)
+    # ------------------------------------------------------------------
+
+    def _log_call(self, number: str):
+        from datetime import datetime
+        import json as _json
+        with self._call_log_lock:
+            calls = []
+            try:
+                with open(self.call_log) as f:
+                    calls = _json.load(f)
+            except (FileNotFoundError, ValueError):
+                pass
+            calls.append({'number': number,
+                          'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')})
+            calls = calls[-10:]
+            try:
+                with open(self.call_log, 'w') as f:
+                    _json.dump(calls, f, indent=2)
+            except Exception as e:
+                logging.warning(f'Call-Log Fehler: {e}')
+
+    # ------------------------------------------------------------------
     # Handler aufrufen
     # ------------------------------------------------------------------
 
@@ -330,6 +356,11 @@ class SIPDaemon:
                 pass
             return
 
+        # OPTIONS-Ping beantworten (Keepalive vieler Provider)
+        if first.startswith('OPTIONS '):
+            send_fn(build_response('200 OK', text))
+            return
+
         if not first.startswith('INVITE '):
             return
 
@@ -353,6 +384,7 @@ class SIPDaemon:
             return
 
         logging.info(f'Eingehender Anruf von {number}  (Call-ID: {call_id})')
+        self._log_call(number)
         threading.Thread(target=self._run_handler, args=(number, text),
                          daemon=True).start()
 
@@ -466,6 +498,12 @@ class SIPDaemon:
         logging.debug(f'REGISTER → (Contact: {contact})\n{msg}')
 
         if self.sock_udp:
+            # Veraltete Queue-Einträge verwerfen bevor wir senden
+            while not self._reg_queue.empty():
+                try:
+                    self._reg_queue.get_nowait()
+                except queue.Empty:
+                    break
             self.sock_udp.sendto(msg.encode(), (self.reg_server, self.reg_port))
         else:
             logging.error('UDP-Socket noch nicht bereit für REGISTER')
