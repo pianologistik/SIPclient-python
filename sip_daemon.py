@@ -394,8 +394,8 @@ class SIPDaemon:
     # ------------------------------------------------------------------
 
     def _udp_listener(self):
+        # kein SO_REUSEADDR: unter Linux könnte sonst eine zweite Instanz still Pakete abgreifen
         self.sock_udp = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
-        self.sock_udp.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         self.sock_udp.bind((self.bind_addr, self.bind_port))
         self.sock_udp.settimeout(1.0)
         logging.info(f'UDP SIP-Listener: {self.bind_addr}:{self.bind_port}')
