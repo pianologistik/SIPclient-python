@@ -111,7 +111,8 @@ def digest_response(username: str, password: str, realm: str,
 
 
 def build_auth_header(username: str, password: str, auth_hdr_val: str,
-                      method: str, uri: str, hdr_name: str = 'Authorization') -> str:
+                      method: str, uri: str, hdr_name: str = 'Authorization',
+                      nc_count: int = 1) -> str:
     """Vollständigen Authorization-Header für Digest-Auth bauen (mit qop-Unterstützung)."""
     params  = parse_www_auth(auth_hdr_val)
     realm   = params.get('realm', '')
@@ -123,7 +124,7 @@ def build_auth_header(username: str, password: str, auth_hdr_val: str,
     # qop=auth bevorzugen, falls angeboten
     qop    = 'auth' if 'auth' in qop_opt else ''
     cnonce = random_tag(16) if qop else ''
-    nc     = '00000001'     if qop else ''
+    nc     = f'{nc_count:08x}' if qop else ''
 
     dr = digest_response(username, password, realm, nonce, method, uri,
                          alg, qop, cnonce, nc)
@@ -545,43 +546,44 @@ class SIPDaemon:
             logging.warning('Öffentliche IP konnte nicht ermittelt werden – '
                             'verwende bind_address. Bei NAT bitte public_address in config.ini setzen.')
 
+        # RFC 3261 §10.2: gleiche Call-ID für alle REGISTER, CSeq steigt.
+        # Mit neuer Call-ID ohne Auth antwortet der Provider 200 OK, verlängert aber nicht.
+        public_ip = self.public_addr or self.bind_addr
+        call_id   = f'{random_tag(20)}@{public_ip}'
+        from_tag  = random_tag(12)
+        uri       = f'sip:{self.reg_domain}'
+        cseq      = 0
+        challenge = None   # (Antwort-Header, WWW-Authenticate-Wert) der letzten 401/407
+        nc        = 0
+
         while self.running:
+            sleep_for = 30   # bei Fehler bald erneut versuchen
             try:
-                call_id  = f'{random_tag(20)}@{self.public_addr or self.bind_addr}'
-                from_tag = random_tag(12)
-                cseq     = 1
-                uri      = f'sip:{self.reg_domain}'
-
-                # ── Schritt 1: REGISTER ohne Auth ──────────────────────────
-                resp  = self._send_register(call_id, from_tag, cseq)
-                text  = resp.decode('utf-8', errors='replace')
-                first = text.split('\r\n', 1)[0]
-
-                # ── Schritt 2: Digest-Auth (401 oder 407) ──────────────────
-                if '401' in first or '407' in first:
+                text, status = '', ''
+                for _ in range(2):  # 2. Versuch nur nach 401/407 (neuer oder abgelaufener Nonce)
                     cseq += 1
-                    auth_hdr_name = 'www-authenticate' if '401' in first else 'proxy-authenticate'
-                    auth_val      = _header(text, auth_hdr_name)
+                    auth = ''
+                    if challenge:
+                        nc += 1
+                        auth = build_auth_header(self.reg_user, self.reg_pass, challenge[1],
+                                                 'REGISTER', uri, challenge[0], nc)
+                    text   = self._send_register(call_id, from_tag, cseq, auth).decode('utf-8', errors='replace')
+                    parts  = text.split('\r\n', 1)[0].split(' ')
+                    status = parts[1] if len(parts) > 1 else ''
+                    if status not in ('401', '407'):
+                        break
+                    is401     = status == '401'
+                    challenge = ('Authorization' if is401 else 'Proxy-Authorization',
+                                 _header(text, 'www-authenticate' if is401 else 'proxy-authenticate'))
+                    nc = 0
 
-                    if not auth_val:
-                        logging.error('401 ohne WWW-Authenticate-Header erhalten')
-                    else:
-                        resp_hdr = 'Authorization' if '401' in first else 'Proxy-Authorization'
-                        auth = build_auth_header(
-                            self.reg_user, self.reg_pass,
-                            auth_val, 'REGISTER', uri, resp_hdr)
-
-                        resp  = self._send_register(call_id, from_tag, cseq, auth)
-                        text  = resp.decode('utf-8', errors='replace')
-                        first = text.split('\r\n', 1)[0]
-
-                # ── Ergebnis auswerten ─────────────────────────────────────
-                if '200' in first:
-                    logging.info(f'SIP-Registration OK '
-                                 f'({self.reg_user}@{self.reg_domain} → '
-                                 f'{self.public_addr or self.bind_addr}:{self.bind_port})')
-                elif first:
-                    logging.warning(f'SIP-Registration fehlgeschlagen: {first.strip()}')
+                if status == '200':
+                    granted = self._granted_expires(text, f'@{public_ip}:{self.bind_port}')
+                    logging.info(f'SIP-Registration OK ({self.reg_user}@{self.reg_domain} → '
+                                 f'{public_ip}:{self.bind_port}, gültig {granted}s)')
+                    sleep_for = max(30, granted // 2)
+                elif text:
+                    logging.warning(f'SIP-Registration fehlgeschlagen: {text.split(chr(13), 1)[0]}')
                     logging.debug(f'Antwort:\n{text[:800]}')
                 else:
                     logging.warning('SIP-Registration: keine Antwort vom Server')
@@ -589,12 +591,20 @@ class SIPDaemon:
             except Exception as e:
                 logging.error(f'Registration-Fehler: {e}')
 
-            # Vor Ablauf erneuern
-            sleep_for = max(30, self.reg_expires - 30)
             for _ in range(sleep_for):
                 if not self.running:
                     break
                 time.sleep(1)
+
+    def _granted_expires(self, text: str, contact_key: str) -> int:
+        """Vom Server gewährte Gültigkeit für unseren Contact (sonst Expires-Header)."""
+        for line in text.split('\r\n'):
+            if line.lower().startswith(('contact:', 'm:')) and contact_key in line:
+                m = re.search(r'expires=(\d+)', line, re.I)
+                if m:
+                    return int(m.group(1))
+        e = _header(text, 'expires')
+        return int(e) if e.isdigit() else self.reg_expires
 
     # ------------------------------------------------------------------
     # Start / Stop
