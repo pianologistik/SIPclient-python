@@ -50,6 +50,10 @@ systemctl daemon-reload
 systemctl enable sip-daemon
 
 echo "[6/6] Firewall-Regel für SIP (Port 5060 UDP+TCP) ..."
+if command -v firewall-cmd &>/dev/null && firewall-cmd --state &>/dev/null; then
+    firewall-cmd --permanent --add-port=5060/udp --add-port=5060/tcp
+    firewall-cmd --reload
+fi
 if command -v ufw &>/dev/null; then
     ufw allow 5060/udp comment "SIP-Daemon" || true
     ufw allow 5060/tcp comment "SIP-Daemon" || true
