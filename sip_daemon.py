@@ -304,7 +304,7 @@ class SIPDaemon:
             try:
                 with open(self.call_log) as f:
                     calls = _json.load(f)
-            except (FileNotFoundError, ValueError):
+            except (OSError, ValueError):
                 pass
             calls.append({'number': number,
                           'timestamp': datetime.now().strftime('%Y-%m-%d %H:%M:%S')})
@@ -410,10 +410,13 @@ class SIPDaemon:
                 self._process(data, send)
             except socket.timeout:
                 continue
-            except OSError:
-                break
-            except Exception as e:
-                logging.debug(f'UDP-Listener Fehler: {e}')
+            except OSError as e:
+                # Linux meldet ICMP port-unreachable als ConnectionRefusedError beim nächsten recvfrom
+                if not self.running:
+                    break
+                logging.warning(f'UDP-Listener Fehler (ignoriert): {e}')
+            except Exception:
+                logging.exception('UDP-Listener Fehler')
 
     # ------------------------------------------------------------------
     # TCP-Listener
@@ -460,8 +463,10 @@ class SIPDaemon:
                                  daemon=True).start()
             except socket.timeout:
                 continue
-            except OSError:
-                break
+            except OSError as e:
+                if not self.running:
+                    break
+                logging.warning(f'TCP-Listener Fehler (ignoriert): {e}')
 
     # ------------------------------------------------------------------
     # SIP-Registration
