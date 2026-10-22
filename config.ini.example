@@ -24,6 +24,7 @@ handler_script = /usr/local/share/sip-daemon/handler.py
 host     = dein-filemaker-server
 database = DeineDatenbank
 layout   = DeinLayout
+script   = scrAnruflisteEinfuegenClient
 username = api-benutzer
 password = api-passwort
 skip_ssl = false
